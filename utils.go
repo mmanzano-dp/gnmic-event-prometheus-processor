@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -416,6 +417,42 @@ func parseEnum(
 	}
 
 	return 0, false, nil
+}
+
+// Parse a numeric string value to a number if its YANG path is configured
+// in numericStringMetrics. RFC 7951 JSON encodes 64-bit integers and
+// decimal64 as strings. Returns int64 when the value fits, then uint64,
+// then float64.
+func parseNumericString(
+	yangPath string,
+	value string,
+	numericStringMetrics map[string][]string,
+) (any, bool, error) {
+	yangPath = stripYangPathOrigin(yangPath)
+	dir := filepath.Dir(yangPath)
+	base := filepath.Base(yangPath)
+
+	for _, matcher := range getYangPathMatchers(dir) {
+		if values, exists := numericStringMetrics[matcher]; exists && slices.Contains(values, base) {
+			if i, err := strconv.ParseInt(value, 10, 64); err == nil {
+				return i, true, nil
+			}
+			if u, err := strconv.ParseUint(value, 10, 64); err == nil {
+				return u, true, nil
+			}
+			if f, err := strconv.ParseFloat(value, 64); err == nil {
+				return f, true, nil
+			}
+			return nil, true, fmt.Errorf(
+				"value %s for %s: %w",
+				value,
+				yangPath,
+				ErrInvalidNumericValue,
+			)
+		}
+	}
+
+	return nil, false, nil
 }
 
 // Convert a set of tags to a string.

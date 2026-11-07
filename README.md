@@ -81,6 +81,8 @@ event-prometheus-processor:
   cisco-wlcs: []
   # List of tags which must exist for AP metrics
   ap-tags: []
+  # List of tags which are added to AP metrics when they are stored for the AP, without dropping the event when they are not
+  optional-ap-tags: []
   # List of YANG paths, if an event matches one of these then it will bypass the required tags configured in ApTags
   bypass-ap-tags: []
   # List of YANG paths, if an event matches one of these then it will be converted to a single info metric regardless of the type of the values
@@ -120,6 +122,13 @@ event-prometheus-processor:
               # New integer value
               to: 0
   integer-info-metrics:
+    - # Apply the configuration to any event that matches this YANG path
+      match: ""
+      # Apply the configuration to any value in this list
+      values: []
+  # List of configuration for parsing numeric string values to numbers
+  # (RFC 7951 JSON encodes 64-bit integers and decimal64 as strings)
+  numeric-string-metrics:
     - # Apply the configuration to any event that matches this YANG path
       match: ""
       # Apply the configuration to any value in this list

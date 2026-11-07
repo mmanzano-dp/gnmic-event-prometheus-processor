@@ -2173,6 +2173,48 @@ func TestParseEnum(t *testing.T) {
 	}
 }
 
+func TestParseNumericString(t *testing.T) {
+	t.Parallel()
+
+	cfg := map[string][]string{
+		"access-point-oper-data/capwap-pkts": {"cntrl-pkts", "data-keep-alive-pkts"},
+		"client-oper-data":                   {"bytes-rx"},
+	}
+
+	tests := []struct {
+		name  string
+		path  string
+		value string
+		v     any
+		match bool
+		err   error
+	}{
+		{"int64", "rfc7951:/Cisco-IOS-XE-wireless-access-point-oper:access-point-oper-data/capwap-pkts/cntrl-pkts", "12345", int64(12345), true, nil},
+		{"negative", "Cisco-IOS-XE-wireless-access-point-oper:access-point-oper-data/capwap-pkts/cntrl-pkts", "-7", int64(-7), true, nil},
+		{"uint64 above int64", "access-point-oper-data/capwap-pkts/data-keep-alive-pkts", "18446744073709551615", uint64(18446744073709551615), true, nil},
+		{"decimal64", "access-point-oper-data/capwap-pkts/cntrl-pkts", "1.25", float64(1.25), true, nil},
+		{"parent path match", "Cisco-IOS-XE-wireless-client-oper:client-oper-data/traffic-stats/bytes-rx", "42", int64(42), true, nil},
+		{"invalid", "access-point-oper-data/capwap-pkts/cntrl-pkts", "abc", nil, true, ErrInvalidNumericValue},
+		{"leaf not listed", "access-point-oper-data/capwap-pkts/ap-name", "1234", nil, false, nil},
+		{"path not listed", "access-point-oper-data/oper-data/cntrl-pkts", "1234", nil, false, nil},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			v, match, err := parseNumericString(test.path, test.value, cfg)
+			if test.err != nil {
+				assert.ErrorIs(t, err, test.err)
+			} else {
+				assert.NoError(t, err)
+			}
+			assert.Equal(t, test.match, match)
+			assert.Equal(t, test.v, v)
+		})
+	}
+}
+
 func TestTagsToString(t *testing.T) {
 	t.Parallel()
 
