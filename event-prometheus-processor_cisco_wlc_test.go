@@ -4057,6 +4057,216 @@ func TestIntegerInfoMetrics(t *testing.T) {
 	}
 }
 
+func TestNumericStringMetrics(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name                 string
+		numericstringmetrics map[string][]string
+		calls                []testCall
+	}
+
+	testCases := []testCase{
+		{
+			name: "single",
+			numericstringmetrics: map[string][]string{
+				"Cisco-IOS-XE-wireless-client-oper:client-oper-data/policy-data": {
+					"res-vlan-id",
+				},
+			},
+			calls: []testCall{
+				{
+					name: "int64 string",
+					input: []*formatters.EventMsg{
+						{
+							Name:      "ap",
+							Timestamp: 1757474904984599000,
+							Tags: map[string]string{
+								"source":            "wlc.example.org",
+								"subscription-name": "ap",
+								"policy-data_mac":   "02:00:00:00:00:01",
+							},
+							Values: map[string]any{
+								"rfc7951:/Cisco-IOS-XE-wireless-client-oper:client-oper-data/policy-data/res-vlan-id": "10",
+							},
+						},
+					},
+					expected: []*formatters.EventMsg{
+						{
+							Name:      "Cisco-IOS-XE-wireless-client-oper:client-oper-data/policy-data",
+							Timestamp: 1757474904984599000,
+							Tags: map[string]string{
+								"source":            "wlc.example.org",
+								"subscription-name": "ap",
+								"client-mac":        "02:00:00:00:00:01",
+							},
+							Values: map[string]any{
+								"cisco/client-oper-data/policy-data/res-vlan-id": int64(10),
+							},
+						},
+					},
+				},
+				{
+					name: "uint64 string",
+					input: []*formatters.EventMsg{
+						{
+							Name:      "ap",
+							Timestamp: 1757474904984599000,
+							Tags: map[string]string{
+								"source":            "wlc.example.org",
+								"subscription-name": "ap",
+								"policy-data_mac":   "02:00:00:00:00:01",
+							},
+							Values: map[string]any{
+								"rfc7951:/Cisco-IOS-XE-wireless-client-oper:client-oper-data/policy-data/res-vlan-id": "18446744073709551615",
+							},
+						},
+					},
+					expected: []*formatters.EventMsg{
+						{
+							Name:      "Cisco-IOS-XE-wireless-client-oper:client-oper-data/policy-data",
+							Timestamp: 1757474904984599000,
+							Tags: map[string]string{
+								"source":            "wlc.example.org",
+								"subscription-name": "ap",
+								"client-mac":        "02:00:00:00:00:01",
+							},
+							Values: map[string]any{
+								"cisco/client-oper-data/policy-data/res-vlan-id": uint64(18446744073709551615),
+							},
+						},
+					},
+				},
+				{
+					name: "decimal string",
+					input: []*formatters.EventMsg{
+						{
+							Name:      "ap",
+							Timestamp: 1757474904984599000,
+							Tags: map[string]string{
+								"source":            "wlc.example.org",
+								"subscription-name": "ap",
+								"policy-data_mac":   "02:00:00:00:00:01",
+							},
+							Values: map[string]any{
+								"rfc7951:/Cisco-IOS-XE-wireless-client-oper:client-oper-data/policy-data/res-vlan-id": "2.5",
+							},
+						},
+					},
+					expected: []*formatters.EventMsg{
+						{
+							Name:      "Cisco-IOS-XE-wireless-client-oper:client-oper-data/policy-data",
+							Timestamp: 1757474904984599000,
+							Tags: map[string]string{
+								"source":            "wlc.example.org",
+								"subscription-name": "ap",
+								"client-mac":        "02:00:00:00:00:01",
+							},
+							Values: map[string]any{
+								"cisco/client-oper-data/policy-data/res-vlan-id": float64(2.5),
+							},
+						},
+					},
+				},
+				{
+					name: "number unchanged",
+					input: []*formatters.EventMsg{
+						{
+							Name:      "ap",
+							Timestamp: 1757474904984599000,
+							Tags: map[string]string{
+								"source":            "wlc.example.org",
+								"subscription-name": "ap",
+								"policy-data_mac":   "02:00:00:00:00:01",
+							},
+							Values: map[string]any{
+								"rfc7951:/Cisco-IOS-XE-wireless-client-oper:client-oper-data/policy-data/res-vlan-id": 10,
+							},
+						},
+					},
+					expected: []*formatters.EventMsg{
+						{
+							Name:      "Cisco-IOS-XE-wireless-client-oper:client-oper-data/policy-data",
+							Timestamp: 1757474904984599000,
+							Tags: map[string]string{
+								"source":            "wlc.example.org",
+								"subscription-name": "ap",
+								"client-mac":        "02:00:00:00:00:01",
+							},
+							Values: map[string]any{
+								"cisco/client-oper-data/policy-data/res-vlan-id": 10,
+							},
+						},
+					},
+				},
+				{
+					name: "invalid string dropped",
+					input: []*formatters.EventMsg{
+						{
+							Name:      "ap",
+							Timestamp: 1757474904984599000,
+							Tags: map[string]string{
+								"source":            "wlc.example.org",
+								"subscription-name": "ap",
+								"policy-data_mac":   "02:00:00:00:00:01",
+							},
+							Values: map[string]any{
+								"rfc7951:/Cisco-IOS-XE-wireless-client-oper:client-oper-data/policy-data/res-vlan-id": "abc",
+							},
+						},
+					},
+					expected: []*formatters.EventMsg{},
+				},
+			},
+		},
+	}
+
+	c := prometheusProcessor{
+		Debug:               true,
+		MetricPrefix:        "cisco",
+		CiscoWLCs:           &[]string{"wlc.example.org"},
+		ApTags:              apTags,
+		BypassApTags:        bypassApTags,
+		tagRenames:          tagRenames,
+		valueTags:           valueTags,
+		enumMappings:        enumMappings,
+		integerInfoMetrics:  integerInfoMetrics,
+		valueAndInfoMetrics: valueAndInfoMetrics,
+		MixedInfoMetrics:    mixedInfoMetrics,
+		ValueBlocklist:      valueBlocklist,
+	}
+	c.WithTargets(map[string]*types.TargetConfig{
+		"wlc.example.org": {
+			Name:    "wlc.example.org",
+			Address: "wlc.example.org:50052",
+		},
+	})
+
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			for _, call := range test.calls {
+				c.numericStringMetrics = test.numericstringmetrics
+				err := c.Init(map[string]any{})
+				require.NoError(t, err)
+
+				actual := c.Apply(call.input...)
+				assert.ElementsMatch(t, call.expected, actual, call.name)
+
+				for k, v := range test.numericstringmetrics {
+					for _, x := range allYangPathCombinations(k, true) {
+						c.numericStringMetrics = map[string][]string{x: v}
+						err := c.Init(map[string]any{})
+						require.NoError(t, err)
+
+						actual := c.Apply(call.input...)
+						assert.ElementsMatch(t, call.expected, actual, call.name+" "+x)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestValueAndInfoMetrics(t *testing.T) {
 	t.Parallel()
 
@@ -4871,10 +5081,11 @@ func TestApTags(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
-		name         string
-		aptags       []string
-		bypassaptags []string
-		calls        []testCall
+		name           string
+		aptags         []string
+		optionalaptags []string
+		bypassaptags   []string
+		calls          []testCall
 	}
 
 	testCases := []testCase{
@@ -4963,6 +5174,177 @@ func TestApTags(t *testing.T) {
 								"subscription-name": "ap",
 								"ap-name":           "ap01",
 								"ap-mac":            "01:00:00:00:00:01",
+							},
+							Values: map[string]any{
+								"cisco/access-point-oper-data/oper-data/ap-sys-stats/cpu-usage": 6,
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:           "optional aptags not stored",
+			aptags:         []string{"ap-mac", "ap-name"},
+			optionalaptags: []string{"site-tag", "location-name"},
+			bypassaptags:   []string{},
+			calls: []testCall{
+				{
+					name: "access-point-oper-data/ap-name-mac-map",
+					input: []*formatters.EventMsg{
+						{
+							Name:      "ap",
+							Timestamp: 1757474904984599000,
+							Tags: map[string]string{
+								"source":                   "wlc.example.org",
+								"subscription-name":        "ap",
+								"ap-name-mac-map_wtp-name": "ap01",
+							},
+							Values: map[string]any{
+								"rfc7951:/Cisco-IOS-XE-wireless-access-point-oper:access-point-oper-data/ap-name-mac-map/wtp-mac": "01:00:00:00:00:01",
+							},
+						},
+						{
+							Name:      "ap",
+							Timestamp: 1757474904984599000,
+							Tags: map[string]string{
+								"source":                   "wlc.example.org",
+								"subscription-name":        "ap",
+								"ap-name-mac-map_wtp-name": "ap01",
+							},
+							Values: map[string]any{
+								"rfc7951:/Cisco-IOS-XE-wireless-access-point-oper:access-point-oper-data/ap-name-mac-map/eth-mac": "00:00:00:00:00:01",
+							},
+						},
+					},
+					expected: []*formatters.EventMsg{},
+				},
+				{
+					name: "metric accepted",
+					input: []*formatters.EventMsg{
+						{
+							Name:      "ap",
+							Timestamp: 1757474904984599000,
+							Tags: map[string]string{
+								"source":            "wlc.example.org",
+								"subscription-name": "ap",
+								"oper-data_wtp-mac": "01:00:00:00:00:01",
+							},
+							Values: map[string]any{
+								"rfc7951:/Cisco-IOS-XE-wireless-access-point-oper:access-point-oper-data/oper-data/ap-sys-stats/cpu-usage": 6,
+							},
+						},
+					},
+					expected: []*formatters.EventMsg{
+						{
+							Name:      "Cisco-IOS-XE-wireless-access-point-oper:access-point-oper-data/oper-data/ap-sys-stats",
+							Timestamp: 1757474904984599000,
+							Tags: map[string]string{
+								"source":            "wlc.example.org",
+								"subscription-name": "ap",
+								"ap-name":           "ap01",
+								"ap-mac":            "01:00:00:00:00:01",
+							},
+							Values: map[string]any{
+								"cisco/access-point-oper-data/oper-data/ap-sys-stats/cpu-usage": 6,
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:           "optional aptags partly stored",
+			aptags:         []string{"ap-mac", "ap-name"},
+			optionalaptags: []string{"site-tag", "location-name"},
+			bypassaptags:   []string{},
+			calls: []testCall{
+				{
+					name: "access-point-oper-data/ap-name-mac-map",
+					input: []*formatters.EventMsg{
+						{
+							Name:      "ap",
+							Timestamp: 1757474904984599000,
+							Tags: map[string]string{
+								"source":                   "wlc.example.org",
+								"subscription-name":        "ap",
+								"ap-name-mac-map_wtp-name": "ap01",
+							},
+							Values: map[string]any{
+								"rfc7951:/Cisco-IOS-XE-wireless-access-point-oper:access-point-oper-data/ap-name-mac-map/wtp-mac": "01:00:00:00:00:01",
+							},
+						},
+						{
+							Name:      "ap",
+							Timestamp: 1757474904984599000,
+							Tags: map[string]string{
+								"source":                   "wlc.example.org",
+								"subscription-name":        "ap",
+								"ap-name-mac-map_wtp-name": "ap01",
+							},
+							Values: map[string]any{
+								"rfc7951:/Cisco-IOS-XE-wireless-access-point-oper:access-point-oper-data/ap-name-mac-map/eth-mac": "00:00:00:00:00:01",
+							},
+						},
+					},
+					expected: []*formatters.EventMsg{},
+				},
+				{
+					name: "ap-cfg-data/ap-tags/ap-tag/site-tag",
+					input: []*formatters.EventMsg{
+						{
+							Name:      "ap",
+							Timestamp: 1757474904984599000,
+							Tags: map[string]string{
+								"source":            "wlc.example.org",
+								"subscription-name": "ap",
+								"ap-tag_ap-mac":     "00:00:00:00:00:01",
+							},
+							Values: map[string]any{
+								"rfc7951:/Cisco-IOS-XE-wireless-ap-cfg:ap-cfg-data/ap-tags/ap-tag/ap-mac": "00:00:00:00:00:01",
+							},
+						},
+						{
+							Name:      "ap",
+							Timestamp: 1757474904984599000,
+							Tags: map[string]string{
+								"source":            "wlc.example.org",
+								"subscription-name": "ap",
+								"ap-tag_ap-mac":     "00:00:00:00:00:01",
+							},
+							Values: map[string]any{
+								"rfc7951:/Cisco-IOS-XE-wireless-ap-cfg:ap-cfg-data/ap-tags/ap-tag/site-tag": "Site1",
+							},
+						},
+					},
+					expected: []*formatters.EventMsg{},
+				},
+				{
+					name: "metric accepted",
+					input: []*formatters.EventMsg{
+						{
+							Name:      "ap",
+							Timestamp: 1757474904984599000,
+							Tags: map[string]string{
+								"source":            "wlc.example.org",
+								"subscription-name": "ap",
+								"oper-data_wtp-mac": "01:00:00:00:00:01",
+							},
+							Values: map[string]any{
+								"rfc7951:/Cisco-IOS-XE-wireless-access-point-oper:access-point-oper-data/oper-data/ap-sys-stats/cpu-usage": 6,
+							},
+						},
+					},
+					expected: []*formatters.EventMsg{
+						{
+							Name:      "Cisco-IOS-XE-wireless-access-point-oper:access-point-oper-data/oper-data/ap-sys-stats",
+							Timestamp: 1757474904984599000,
+							Tags: map[string]string{
+								"source":            "wlc.example.org",
+								"subscription-name": "ap",
+								"ap-name":           "ap01",
+								"ap-mac":            "01:00:00:00:00:01",
+								"site-tag":          "Site1",
 							},
 							Values: map[string]any{
 								"cisco/access-point-oper-data/oper-data/ap-sys-stats/cpu-usage": 6,
@@ -5076,6 +5458,7 @@ func TestApTags(t *testing.T) {
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
 			c.ApTags = &test.aptags
+			c.OptionalApTags = &test.optionalaptags
 			c.BypassApTags = &test.bypassaptags
 			err := c.Init(map[string]any{})
 			require.NoError(t, err)

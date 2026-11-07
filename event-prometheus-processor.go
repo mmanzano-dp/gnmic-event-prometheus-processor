@@ -86,6 +86,8 @@ type prometheusProcessor struct {
 	CiscoWLCs *[]string `mapstructure:"cisco-wlcs,omitempty"             yaml:"cisco-wlcs,omitempty"             json:"cisco-wlcs,omitempty"`
 	// List of tags which must exist for AP metrics
 	ApTags *[]string `mapstructure:"ap-tags,omitempty"                yaml:"ap-tags,omitempty"                json:"ap-tags,omitempty"`
+	// List of tags which are added to AP metrics when they are stored for the AP, without dropping the event when they are not
+	OptionalApTags *[]string `mapstructure:"optional-ap-tags,omitempty"       yaml:"optional-ap-tags,omitempty"       json:"optional-ap-tags,omitempty"`
 	// List of YANG paths, if an event matches one of these then it will bypass the required tags configured in ApTags
 	BypassApTags *[]string `mapstructure:"bypass-ap-tags,omitempty"         yaml:"bypass-ap-tags,omitempty"         json:"bypass-ap-tags,omitempty"`
 	// List of YANG paths, if an event matches one of these then it will be converted to a single info metric regardless of the type of the values
@@ -102,6 +104,8 @@ type prometheusProcessor struct {
 	EnumMappings *[]confEnumMappings `mapstructure:"enum-mappings,omitempty"          yaml:"enum-mappings,omitempty"          json:"enum-mappings,omitempty"`
 	// List of configuration for converting integer values to tags
 	IntegerInfoMetrics *[]confValues `mapstructure:"integer-info-metrics,omitempty"   yaml:"integer-info-metrics,omitempty"   json:"integer-info-metrics,omitempty"`
+	// List of configuration for parsing numeric string values to numbers (RFC 7951 JSON encodes 64-bit integers and decimal64 as strings)
+	NumericStringMetrics *[]confValues `mapstructure:"numeric-string-metrics,omitempty" yaml:"numeric-string-metrics,omitempty" json:"numeric-string-metrics,omitempty"`
 	// List of configuration for keeping original value when a value is converted to an info metric
 	ValueAndInfoMetrics *[]confValues `mapstructure:"value-and-info-metrics,omitempty" yaml:"value-and-info-metrics,omitempty" json:"value-and-info-metrics,omitempty"`
 
@@ -110,11 +114,12 @@ type prometheusProcessor struct {
 
 	wlcs map[string]ciscoWLC
 
-	tagRenames          map[string]map[string]string
-	valueTags           map[string][]string
-	enumMappings        map[string]map[string]map[string]int
-	integerInfoMetrics  map[string][]string
-	valueAndInfoMetrics map[string][]string
+	tagRenames           map[string]map[string]string
+	valueTags            map[string][]string
+	enumMappings         map[string]map[string]map[string]int
+	integerInfoMetrics   map[string][]string
+	numericStringMetrics map[string][]string
+	valueAndInfoMetrics  map[string][]string
 
 	condition             *gojq.Code
 	targetsConfigs        map[string]*types.TargetConfig
@@ -156,6 +161,9 @@ func (p *prometheusProcessor) Init(cfg any, opts ...formatters.Option) error {
 
 	if p.ApTags == nil {
 		p.ApTags = &[]string{}
+	}
+	if p.OptionalApTags == nil {
+		p.OptionalApTags = &[]string{}
 	}
 	if p.BypassApTags == nil {
 		p.BypassApTags = &[]string{}
@@ -371,6 +379,40 @@ func (p *prometheusProcessor) Init(cfg any, opts ...formatters.Option) error {
 				p.integerInfoMetrics[stripped] = v
 			}
 			delete(p.integerInfoMetrics, m)
+		}
+	}
+
+	if p.NumericStringMetrics != nil {
+		// Parse numeric string metric configuration
+		numericStringMetrics := map[string][]string{}
+		for _, v := range *p.NumericStringMetrics {
+			if v.Match == nil {
+				p.logger.Error(
+					"numeric-string-metrics configuration item missing required field",
+					"field",
+					"match",
+				)
+				continue
+			}
+			if s, exists := numericStringMetrics[*v.Match]; exists {
+				s = append(s, v.Values...)
+				numericStringMetrics[*v.Match] = s
+			} else {
+				numericStringMetrics[*v.Match] = v.Values
+			}
+		}
+		p.numericStringMetrics = numericStringMetrics
+	}
+	for m, v := range p.numericStringMetrics {
+		// Strip numeric string metric yang paths
+		stripped := stripYangPathOrigin(m)
+		if m != stripped {
+			if curr, exists := p.numericStringMetrics[stripped]; exists {
+				p.numericStringMetrics[stripped] = append(curr, v...)
+			} else {
+				p.numericStringMetrics[stripped] = v
+			}
+			delete(p.numericStringMetrics, m)
 		}
 	}
 
@@ -674,11 +716,27 @@ func (p *prometheusProcessor) Apply(events ...*formatters.EventMsg) []*formatter
 
 			infoMetrics := []*formatters.EventMsg{}
 
-			// Convert timestamp and enum string values to integers
+			// Convert numeric, timestamp and enum string values to numbers
 			for k, v := range e.Values {
 				matched := false
 
 				if s, ok := v.(string); ok {
+					// Parse numeric strings to numbers based on NumericStringMetrics configuration
+					if n, match, err := parseNumericString(k, s, p.numericStringMetrics); match {
+						if err != nil {
+							p.logger.Error(
+								"error parsing numeric string",
+								"event", e.Name,
+								"tags", tagsToString(e.Tags),
+								"error", err.Error(),
+							)
+							delete(e.Values, k)
+						} else {
+							e.Values[k] = n
+						}
+						continue
+					}
+
 					// Convert timestamps to unixtime
 					if t, match, err := parseTimestamp(s); match {
 						if err != nil {
@@ -1013,6 +1071,26 @@ func (p *prometheusProcessor) Apply(events ...*formatters.EventMsg) []*formatter
 					}
 					if !valid {
 						continue
+					}
+					if t, ok := tags.(*sync.Map); ok {
+						for _, tag := range *p.OptionalApTags {
+							// Add tags configured in OptionalApTags when they are
+							// stored for this AP, keep the event when they are not
+							if _, exists := e.Tags[tag]; exists {
+								continue
+							}
+							if v, exists := t.Load(tag); exists {
+								s := fmt.Sprintf("%s", v)
+								if err := addTag(e.Tags, tag, s); err != nil {
+									p.logger.Warn(
+										"error updating optional ap tag",
+										"event", e.Name,
+										"tags", tagsToString(e.Tags),
+										"error", err.Error(),
+									)
+								}
+							}
+						}
 					}
 				} else {
 					p.logger.Warn("no stored tags for ap", "event", e.Name, "tags", tagsToString(e.Tags), "ap-name", apName)
